@@ -683,10 +683,12 @@ const OrgsTab = ({ orgs, onRefresh }) => {
                           onClick={() => setApiKeyOrg(org)} title="API Keys">
                           <Key size={14} />
                         </button>
-                        <button className="admin-btn-sm danger" title="Delete"
-                          onClick={() => { setOrgToDelete(org); setDeleteModalOpen(true); }}>
-                          <Trash2 size={14} />
-                        </button>
+                        {!org.external_club_id && (
+                          <button className="admin-btn-sm danger" title="Delete"
+                            onClick={() => { setOrgToDelete(org); setDeleteModalOpen(true); }}>
+                            <Trash2 size={14} />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -723,10 +725,12 @@ const OrgsTab = ({ orgs, onRefresh }) => {
                     onClick={() => setApiKeyOrg(org)}>
                     <Key size={13} /> Key
                   </button>
-                  <button className="admin-btn-sm danger" title="Delete"
-                    onClick={() => { setOrgToDelete(org); setDeleteModalOpen(true); }}>
-                    <Trash2 size={13} />
-                  </button>
+                  {!org.external_club_id && (
+                    <button className="admin-btn-sm danger" title="Delete"
+                      onClick={() => { setOrgToDelete(org); setDeleteModalOpen(true); }}>
+                      <Trash2 size={13} />
+                    </button>
+                  )}
                 </div>
               </div>
             ))}

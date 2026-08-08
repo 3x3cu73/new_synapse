@@ -131,15 +131,18 @@ const MobileNav = ({ user, hasManagementAccess, logout }) => {
                   <Shield size={18} /> Admin Panel
                 </NavLink>
               )}
-              {user?.roles?.map((role, idx) => (
+              {user?.roles?.map((role, idx) => {
+                const label = role.organization?.name || orgDisplayName(role.organization?.name);
+                return (
                 <NavLink key={idx} to={`/org/${role.org_id}/dashboard`} className="mobile-drawer-link" onClick={closeMobileMenu}>
                   {role.organization?.banner_url ? (
                     <img src={role.organization.banner_url} alt="" className="sidebar-org-img" />
                   ) : (
-                    <OrgLogo orgName={orgDisplayName(role.organization?.name)} size={18} />
-                  )} {orgDisplayName(role.organization?.name)}
+                    <OrgLogo orgName={label} size={18} />
+                  )} {label}
                 </NavLink>
-              ))}
+                );
+              })}
               {user && (
                 <button onClick={() => { logout(); closeMobileMenu(); }} className="mobile-drawer-logout">
                   <LogOut size={18} /> Logout
@@ -213,17 +216,20 @@ const Sidebar = ({ mobileOnly = false, collapsed, onToggle }) => {
                   {!collapsed && <span>Admin Panel</span>}
                 </NavLink>
               )}
-              {user?.roles?.map((role, idx) => (
+              {user?.roles?.map((role, idx) => {
+                const label = role.organization?.name || orgDisplayName(role.organization?.name);
+                return (
                 <NavLink key={idx} to={`/org/${role.org_id}/dashboard`}
                   className={({ isActive }) => `sidebar-v2-link ${isActive ? 'active' : ''}`}>
                   {role.organization?.banner_url ? (
                     <img src={role.organization.banner_url} alt="" className="sidebar-org-img" />
                   ) : (
-                    <OrgLogo orgName={orgDisplayName(role.organization?.name)} size={20} />
+                    <OrgLogo orgName={label} size={20} />
                   )}
-                  {!collapsed && <span>{orgDisplayName(role.organization?.name)}</span>}
+                  {!collapsed && <span>{label}</span>}
                 </NavLink>
-              ))}
+                );
+              })}
             </>
           )}
         </nav>

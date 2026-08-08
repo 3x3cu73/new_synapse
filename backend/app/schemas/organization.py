@@ -23,6 +23,7 @@ class OrganizationOut(BaseModel):
     org_type: str
     banner_url: Optional[str] = None
     genres: Optional[str] = None
+    external_club_id: Optional[str] = None
     created_at: Optional[datetime] = None
 
     class Config:

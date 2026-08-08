@@ -60,8 +60,17 @@ def get_my_calendar(
     current_user: User = Depends(deps.get_current_user)
 ):
     """Get all events the user has registered for."""
-    # SQLAlchemy relationship magic
-    return [reg.event for reg in current_user.registrations]
+    from sqlalchemy.orm import joinedload
+    from app.models.registration import Registration
+    from app.models.event import Event
+
+    regs = (
+        db.query(Registration)
+        .options(joinedload(Registration.event).joinedload(Event.organization))
+        .filter(Registration.user_id == current_user.id)
+        .all()
+    )
+    return [reg.event for reg in regs if reg.event]
 
 
 @router.get("/feedback-pending", response_model=list[EventOut])

@@ -43,6 +43,8 @@ export const ORG_TYPES = [
 
 export const HEAD_ROLES = [
   "overall coordinator",
+  "co overall coordinator",
+  "caic admin",
   "president",
   "general secretary",
   "vice president",

@@ -17,6 +17,7 @@ from app.services.oidc_auth import (
     exchange_code_for_tokens,
     extract_email,
     extract_entry_number,
+    extract_full_entry_number,
     extract_hostel,
     extract_kerberos,
     extract_name,
@@ -119,13 +120,16 @@ async def oidc_callback(
 
     email = extract_email(userinfo, kerberos)
     name = extract_name(userinfo)
+    # Unique id stored as kerberos (ms1240098), not full 2024MS10098 entry.
     entry_number = extract_entry_number(userinfo, kerberos)
+    full_entry = extract_full_entry_number(userinfo)
     hostel = _parse_hostel(extract_hostel(userinfo))
-    dept, year = parse_entry_number(entry_number)
+    dept, year = parse_entry_number(full_entry or entry_number)
 
-    user = db.query(User).filter(User.email == email).first()
-    if not user and entry_number:
-        user = db.query(User).filter(User.entry_number == entry_number).first()
+    # Prefer kerberos match (canonical), then email.
+    user = db.query(User).filter(User.entry_number == entry_number).first()
+    if not user:
+        user = db.query(User).filter(User.email == email).first()
 
     if not user:
         user = User(
@@ -144,8 +148,14 @@ async def oidc_callback(
         if name and user.name != name:
             user.name = name
             changed = True
-        if entry_number and not user.entry_number:
+        # Migrate legacy full entry numbers → kerberos
+        if entry_number and user.entry_number != entry_number:
             user.entry_number = entry_number
+            changed = True
+        if email and user.email != email and not str(user.email).endswith("@iitd.ac.in"):
+            pass  # keep dept email if already set
+        elif email and user.email != email:
+            user.email = email
             changed = True
         if dept and user.department != dept:
             user.department = dept
@@ -159,6 +169,14 @@ async def oidc_callback(
         if changed:
             db.commit()
             db.refresh(user)
+
+    # Sync Superdir roles immediately so the first /auth/me already has dashboards
+    try:
+        from app.services.superdir_sync import sync_user_from_superdir
+
+        sync_user_from_superdir(db, user)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Post-login Superdir sync failed for %s: %s", user.email, exc)
 
     access_token = create_access_token(subject=user.id)
     refresh_token = create_refresh_token(subject=user.id)

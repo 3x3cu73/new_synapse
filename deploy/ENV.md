@@ -20,9 +20,19 @@ OIDC_REDIRECT_URI=https://synapse.devclub.in/api/auth/callback
 OIDC_SCOPE=openid profile email kerberos entry_number hostel iitd
 OIDC_DISCOVERY_URL=https://auth.devclub.in/api/oauth/.well-known/openid-configuration
 OIDC_APP_NAME=Synapse
+
+REDPAGE_API_BASE=https://superdirectory.devclub.in
+REDPAGE_SERVICE_KEY=
+REDPAGE_PERMISSIONS_AUDIENCE=synapse
+REDPAGE_PERMISSIONS_ISSUER=https://superdirectory.devclub.in
+REDPAGE_VERIFY_ASSERTION=true
+REDPAGE_SYNC_ON_ME=true
 ```
 
 Reuse the existing DevClub OAuth app redirect: `https://synapse.devclub.in/api/auth/callback`.
+
+Event create/edit for club coordinators comes from Superdirectory
+`GET /api/permissions/{kerberos}?audience=synapse` (`manage_events`, level ≤ 3).
 
 ## One-time VM prep
 

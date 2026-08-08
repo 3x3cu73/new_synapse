@@ -8,7 +8,10 @@ class Organization(Base):
     __tablename__ = "organizations"
 
     id = Column(Integer, primary_key=True, index=True)
+    # Display name from Superdir (e.g. "DevClub", "Business & Consulting Club")
     name = Column(String, unique=True, nullable=False, index=True)
+    # Stable Superdir club_id (e.g. "devclub", "bnc")
+    external_club_id = Column(String, unique=True, nullable=True, index=True)
     org_type = Column(String, nullable=False, index=True)
     banner_url = Column(String, nullable=True)
     genres = Column(String, nullable=True)

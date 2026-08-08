@@ -76,6 +76,14 @@ def delete_organization(
     org = db.query(Organization).filter(Organization.id == org_id).first()
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
+    # Clubs synced from Superdirectory are owned by Superdir PORs — never
+    # deletable from Synapse (a coordinator / CAIC admin must not wipe other clubs).
+    if org.external_club_id:
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot delete a Superdirectory club from Synapse. "
+            "Remove or edit it in Superdirectory instead.",
+        )
     db.delete(org)
     db.commit()
 

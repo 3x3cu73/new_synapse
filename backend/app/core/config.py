@@ -36,6 +36,14 @@ class Settings(BaseSettings):
     )
     OIDC_APP_NAME: str = "Synapse"
 
+    # Superdirectory universal permissions
+    REDPAGE_API_BASE: str = "https://superdirectory.devclub.in"
+    REDPAGE_SERVICE_KEY: str = ""
+    REDPAGE_PERMISSIONS_AUDIENCE: str = "synapse"
+    REDPAGE_PERMISSIONS_ISSUER: str = "https://superdirectory.devclub.in"
+    REDPAGE_VERIFY_ASSERTION: bool = True
+    REDPAGE_SYNC_ON_ME: bool = True
+
     # AWS (used by SQS service)
     AWS_ACCESS_KEY_ID: str = ""
     AWS_SECRET_ACCESS_KEY: str = ""

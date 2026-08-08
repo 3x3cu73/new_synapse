@@ -743,9 +743,7 @@
     width: 100% !important;
   }
 
-  /* ===== STUDENT DASHBOARD — CALENDAR FIX ===== */
-
-  /* Let both columns stack and be full width */
+  /* ===== STUDENT DASHBOARD — CALENDAR ===== */
   .student-dashboard .col-12.col-lg-8,
   .student-dashboard .col-12.col-lg-4 {
     width: 100% !important;
@@ -753,69 +751,63 @@
     flex: 0 0 100% !important;
   }
 
-  /* Calendar container: no side padding squeeze */
+  .student-dashboard .calendar-hero {
+    gap: 12px;
+  }
+
+  .student-dashboard .calendar-title {
+    font-size: 1.15rem;
+  }
+
+  .student-dashboard .calendar-hero-actions {
+    width: 100%;
+  }
+
+  .student-dashboard .calendar-hero-actions .cal-action-btn {
+    flex: 1;
+    justify-content: center;
+  }
+
   .student-dashboard .calendar-shell {
     padding: 8px !important;
     overflow-x: auto;
   }
 
-  /* FullCalendar: force list view dimensions */
   .student-dashboard .fc {
     font-size: 0.75rem !important;
   }
 
   .student-dashboard .fc .fc-toolbar {
     flex-wrap: wrap !important;
-    gap: 6px !important;
+    gap: 8px !important;
     justify-content: center !important;
-    margin-bottom: 8px !important;
+    margin-bottom: 10px !important;
   }
 
   .student-dashboard .fc .fc-toolbar-title {
-    font-size: 0.95rem !important;
+    font-size: 1rem !important;
     width: 100%;
     text-align: center;
     order: -1;
   }
 
-  .student-dashboard .fc .fc-toolbar-chunk {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-  }
-
   .student-dashboard .fc .fc-button {
-    padding: 3px 8px !important;
+    padding: 5px 10px !important;
     font-size: 0.7rem !important;
   }
 
-  /* Day grid: compact cells */
   .student-dashboard .fc .fc-daygrid-day {
-    min-height: 40px !important;
+    min-height: 56px !important;
   }
 
   .student-dashboard .fc .fc-daygrid-day-number {
     font-size: 0.72rem !important;
-    padding: 2px 4px !important;
   }
 
-  .student-dashboard .fc .fc-col-header-cell-cushion {
-    font-size: 0.65rem !important;
-    padding: 4px 2px !important;
+  .student-dashboard .calendar-upcoming-chip {
+    flex-basis: min(240px, 85vw);
   }
 
-  .student-dashboard .fc .fc-daygrid-event {
-    font-size: 0.6rem !important;
-    padding: 1px 3px !important;
-  }
-
-  /* Sync modal: full-width on small screens */
-  .student-dashboard .modal-content {
-    width: 95% !important;
-    max-width: 95% !important;
-  }
-
-  /* Widgets: stack with proper spacing */
   .student-dashboard .col-12.col-lg-4 {
     gap: 12px !important;
   }

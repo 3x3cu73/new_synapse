@@ -34,6 +34,8 @@ router = APIRouter()
 # ------------------------------------------------------------------
 HEAD_ROLES_SET = {
     "overall coordinator",
+    "co overall coordinator",
+    "caic admin",
     "president",
     "vice president",
     "general secretary",
@@ -41,6 +43,9 @@ HEAD_ROLES_SET = {
     "secretary",
     "convener"
 }
+
+# Access-only label — not a club team membership.
+CAIC_ADMIN_ROLE = "caic admin"
 
 
 # ------------------------------------------------------------------
@@ -51,15 +56,81 @@ def get_org_role(
     current_user: User = Depends(deps.get_current_user),
     db: Session = Depends(deps.get_db),
 ):
-    """Validates user has a role in the org referenced by org_id."""
+    """
+    Validates org management access.
+
+    Prefer Superdirectory universal capability `manage_events` (coordinator+),
+    syncing roles into Synapse. Falls back to a local Role row for non-CAIC orgs.
+    """
+    from app.services.superdir_sync import (
+        can_manage_events_for_org,
+        sync_user_from_superdir,
+    )
+
+    access = None
+    try:
+        access = sync_user_from_superdir(db, current_user)
+    except Exception:
+        access = None
+
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
     role = db.query(Role).filter(
         Role.user_id == current_user.id,
-        Role.org_id == org_id
+        Role.org_id == org_id,
     ).first()
 
-    if not role:
-        raise HTTPException(status_code=403, detail="You are not authorized to manage this organization.")
-    return role
+    # Synapse platform superuser — full org access.
+    if current_user.is_superuser:
+        if role:
+            return role
+        label = (
+            CAIC_ADMIN_ROLE
+            if access and access.is_superadmin
+            else "overall coordinator"
+        )
+        return Role(user_id=current_user.id, org_id=org_id, role_name=label)
+
+    # Superdir CAIC admin (global_level=0) — full access to Superdir clubs.
+    # Keep real POR title when present; otherwise label as caic admin.
+    if access and access.is_superadmin and org.external_club_id:
+        return role or Role(
+            user_id=current_user.id, org_id=org_id, role_name=CAIC_ADMIN_ROLE
+        )
+
+    # Superdir-linked clubs: POR / manage_events.
+    if org.external_club_id:
+        if access and can_manage_events_for_org(access, org):
+            if role:
+                return role
+            role = db.query(Role).filter(
+                Role.user_id == current_user.id,
+                Role.org_id == org_id,
+            ).first()
+            if role:
+                return role
+            raise HTTPException(
+                status_code=403,
+                detail="Superdirectory granted manage_events but Synapse role sync failed.",
+            )
+        if role:
+            return role
+        raise HTTPException(
+            status_code=403,
+            detail="You are not authorized to manage this organization. "
+            "Club coordinators+ are granted via Superdirectory PORs.",
+        )
+
+    # Local / non-Superdir orgs
+    if role:
+        return role
+
+    raise HTTPException(
+        status_code=403,
+        detail="You are not authorized to manage this organization.",
+    )
 
 
 def get_org_head(
@@ -540,20 +611,120 @@ def handle_event_request(
 # ------------------------------------------------------------------
 # TEAM MANAGEMENT
 # ------------------------------------------------------------------
+_SUPERDIR_ROLE_LABELS = {
+    "oc": "overall coordinator",
+    "co_oc": "co overall coordinator",
+    "coordinator": "coordinator",
+    "panel_member": "panel member",
+    "executive": "executive",
+}
+
+
 @router.get("/{org_id}/team")
 def get_team_members(
     org_id: int,
     db: Session = Depends(deps.get_db),
     role: Role = Depends(get_org_role)
 ):
-    team_roles = db.query(Role).options(joinedload(Role.user)).filter(Role.org_id == org_id).all()
-    return [{
-        "user_id": r.user_id,
-        "name": r.user.name,
-        "email": r.user.email,
-        "role": r.role_name,
-        "photo_url": r.user.photo_url,
-    } for r in team_roles]
+    """
+    Team list for an org.
+
+    Superdir-linked clubs: show all current-year PORs from Superdirectory
+    (not only people who have logged into Synapse). Local Synapse-only
+    roles are appended if missing.
+    """
+    org = db.query(Organization).filter(Organization.id == org_id).first()
+    if not org:
+        raise HTTPException(status_code=404, detail="Organization not found")
+
+    team_roles = (
+        db.query(Role)
+        .options(joinedload(Role.user))
+        .filter(Role.org_id == org_id)
+        .all()
+    )
+    local_by_email = {
+        (r.user.email or "").lower(): r for r in team_roles if r.user and r.user.email
+    }
+    local_by_kerberos = {}
+    for r in team_roles:
+        if not r.user:
+            continue
+        for key in (
+            (r.user.email or "").split("@")[0].lower(),
+            (r.user.entry_number or "").lower(),
+        ):
+            if key:
+                local_by_kerberos[key] = r
+
+    members: list[dict] = []
+    seen_emails: set[str] = set()
+    seen_kerberos: set[str] = set()
+
+    if org.external_club_id:
+        from app.services.redpage_permissions import fetch_club_pors
+
+        try:
+            pors = fetch_club_pors(org.external_club_id)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to load Superdir PORs for %s: %s", org.external_club_id, exc)
+            pors = []
+
+        if pors:
+            years = [p.get("academic_year") for p in pors if p.get("academic_year")]
+            current_year = max(years) if years else None
+            if current_year:
+                pors = [p for p in pors if p.get("academic_year") == current_year]
+
+        role_rank = {"oc": 0, "co_oc": 1, "coordinator": 2, "panel_member": 3, "executive": 4}
+        pors.sort(key=lambda p: (role_rank.get(str(p.get("role")), 9), (p.get("name") or "").lower()))
+
+        for por in pors:
+            kerberos = (por.get("kerberos") or "").lower()
+            email = (por.get("email") or "").lower() or (f"{kerberos}@iitd.ac.in" if kerberos else "")
+            local = local_by_kerberos.get(kerberos) or local_by_email.get(email)
+            label = _SUPERDIR_ROLE_LABELS.get(str(por.get("role")), str(por.get("role") or "member"))
+            members.append({
+                "user_id": local.user_id if local else None,
+                "kerberos": kerberos,
+                "name": por.get("name") or kerberos,
+                "email": (local.user.email if local and local.user else email),
+                "role": label,
+                "photo_url": local.user.photo_url if local and local.user else None,
+                "source": "superdir",
+            })
+            if email:
+                seen_emails.add(email)
+            if kerberos:
+                seen_kerberos.add(kerberos)
+
+    # Superdir-linked clubs: roster is read-only from RedPage PORs only.
+    if org.external_club_id:
+        return members
+
+    for r in team_roles:
+        role_l = (r.role_name or "").lower()
+        email = (r.user.email or "").lower() if r.user else ""
+        kerberos = (
+            (r.user.entry_number or "").lower()
+            if r.user and getattr(r.user, "entry_number", None)
+            else (email.split("@")[0] if email else "")
+        )
+        if email in seen_emails or kerberos in seen_kerberos:
+            continue
+        if role_l in {CAIC_ADMIN_ROLE, "overall coordinator", "co overall coordinator"}:
+            continue
+        members.append({
+            "user_id": r.user_id,
+            "kerberos": kerberos,
+            "name": r.user.name if r.user else "Unknown",
+            "email": r.user.email if r.user else "",
+            "role": r.role_name,
+            "photo_url": r.user.photo_url if r.user else None,
+            "source": "synapse",
+        })
+
+    return members
 
 
 @router.post("/{org_id}/team")
@@ -561,31 +732,9 @@ def add_team_member(
     org_id: int,
     member_in: TeamMemberCreate,
     db: Session = Depends(deps.get_db),
-    head_role: Role = Depends(get_org_head)
+    role: Role = Depends(get_org_role),
 ):
-    if member_in.role.value in HEAD_ROLES_SET:
-        raise HTTPException(status_code=403, detail="Permission Denied. You cannot appoint other Heads. Contact Admin.")
-
-    target_user = db.query(User).filter(User.email == member_in.email).first()
-    if not target_user:
-        raise HTTPException(status_code=404, detail="User not found. They must login to Synapse at least once.")
-
-    existing = db.query(Role).filter(
-        Role.user_id == target_user.id,
-        Role.org_id == head_role.org_id
-    ).first()
-
-    if existing:
-        raise HTTPException(status_code=400, detail="User is already in team")
-
-    new_role = Role(
-        user_id=target_user.id,
-        org_id=head_role.org_id,
-        role_name=member_in.role.value,
-    )
-    db.add(new_role)
-    db.commit()
-    return {"msg": "Member added"}
+    raise HTTPException(status_code=403, detail="Manage team in Superdirectory.")
 
 
 @router.delete("/{org_id}/team/{user_id}")
@@ -593,26 +742,9 @@ def remove_team_member(
     org_id: int,
     user_id: int,
     db: Session = Depends(deps.get_db),
-    head_role: Role = Depends(get_org_head)
+    role: Role = Depends(get_org_role),
 ):
-    if user_id == head_role.user_id:
-        raise HTTPException(status_code=400, detail="Cannot remove yourself")
-
-    role_to_delete = db.query(Role).filter(
-        Role.user_id == user_id,
-        Role.org_id == org_id
-    ).first()
-
-    if not role_to_delete:
-        raise HTTPException(status_code=404, detail="Member not found")
-
-    if role_to_delete.role_name in HEAD_ROLES_SET:
-        raise HTTPException(status_code=403, detail="Permission Denied. You cannot remove another Head-level member.")
-
-    db.delete(role_to_delete)
-    db.commit()
-
-    return {"msg": "Member removed"}
+    raise HTTPException(status_code=403, detail="Manage team in Superdirectory.")
 
 
 @router.post("/{org_id}/banner")
@@ -651,9 +783,10 @@ def delete_org_banner(
     if not org:
         raise HTTPException(status_code=404, detail="Organization not found")
 
-    org.banner_url = None
+    # Empty string = intentionally cleared (Superdir sync must not restore logo).
+    org.banner_url = ""
     db.commit()
-    return {"msg": "Banner removed"}
+    return {"banner_url": "", "msg": "Banner removed"}
 
 
 @router.patch("/{org_id}/genres")

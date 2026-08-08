@@ -1,271 +1,134 @@
-// import { useState } from "react";
-// import { FiUpload, FiEdit2 } from "react-icons/fi";
-// import api from "../../api/axios";
-// import toast from "react-hot-toast";
-
-// export default function OrgBanner({ orgId, orgName, bannerUrl }) {
-
-//   const [preview, setPreview] = useState(bannerUrl || null);
-//   const [loading, setLoading] = useState(false);
-
-//   const handleUpload = async (file) => {
-//     const formData = new FormData();
-//     formData.append("banner", file);
-
-//     setLoading(true);
-
-//     try {
-//       const res = await api.post(`/org/${orgId}/banner`, formData);
-
-//       const newUrl = res.data.banner_url;
-
-//       setPreview(`${newUrl}?t=${Date.now()}`); // bust cache
-//       toast.success("Banner updated");
-
-//     } catch (err) {
-//       toast.error("Upload failed");
-//     }
-
-//     setLoading(false);
-//   };
-
-//   const onFileChange = (e) => {
-//     const file = e.target.files[0];
-//     if (!file) return;
-//     handleUpload(file);
-//   };
-
-//   return (
-//     <div style={{ textAlign: "center", position: "relative" }}>
-//       <label style={{ cursor: "pointer", position: "relative" }}>
-//         <div
-//           style={{
-//             width: "130px",
-//             height: "130px",
-//             borderRadius: "50%",
-//             overflow: "hidden",
-//             border: "3px solid var(--border-primary)",
-//             display: "flex",
-//             alignItems: "center",
-//             justifyContent: "center",
-//             background: "var(--bg-tertiary)",
-//             position: "relative"
-//           }}
-//         >
-//           {loading ? (
-//             <div
-//               style={{
-//                 width: "30px",
-//                 height: "30px",
-//                 border: "4px solid #ccc",
-//                 borderTop: "4px solid #333",
-//                 borderRadius: "50%",
-//                 animation: "spin 1s linear infinite"
-//               }}
-//             />
-//           ) : preview ? (
-//             <img
-//               src={preview}
-//               alt="banner"
-//               style={{
-//                 width: "100%",
-//                 height: "100%",
-//                 objectFit: "cover"
-//               }}
-//             />
-//           ) : (
-//             <FiUpload size={32} color="#666" />
-//           )}
-//         </div>
-
-//         {/* edit icon */}
-//         {preview && !loading && (
-//           <div
-//             style={{
-//               position: "absolute",
-//               bottom: "5px",
-//               right: "5px",
-//               background: "#fff",
-//               borderRadius: "50%",
-//               padding: "6px",
-//               boxShadow: "0 0 4px rgba(0,0,0,0.2)"
-//             }}
-//           >
-//             <FiEdit2 size={14} />
-//           </div>
-//         )}
-
-//         <input
-//           type="file"
-//           accept="image/png,image/jpeg,image/jpg"
-//           style={{ display: "none" }}
-//           onChange={onFileChange}
-//         />
-//       </label>
-
-//       <style>
-//         {`
-//         @keyframes spin {
-//           0% { transform: rotate(0deg); }
-//           100% { transform: rotate(360deg); }
-//         }
-//         `}
-//       </style>
-//     </div>
-//   );
-// }
-
-import { useState } from "react";
-import { FiUpload, FiX } from "react-icons/fi";
+import { useEffect, useRef, useState } from "react";
+import { Camera, Trash2 } from "lucide-react";
 import api from "../../api/axios";
 import toast from "react-hot-toast";
 import OrgLogo from "./OrgLogo";
+import ConfirmationModal from "./ConfirmationModal";
 
-export default function OrgBanner({ orgId, orgName, bannerUrl }) {
-
+export default function OrgBanner({ orgId, orgName, bannerUrl, onBannerChange }) {
   const [preview, setPreview] = useState(bannerUrl || null);
   const [imgError, setImgError] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [removing, setRemoving] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  const inputRef = useRef(null);
+
+  useEffect(() => {
+    setPreview(bannerUrl || null);
+    setImgError(false);
+  }, [bannerUrl]);
 
   const handleUpload = async (file) => {
     const formData = new FormData();
     formData.append("banner", file);
     setLoading(true);
-    setImgError(false); // reset error state on new upload
+    setImgError(false);
 
     try {
       const res = await api.post(`/org/${orgId}/banner`, formData);
-      const newUrl = res.data.banner_url;
-      setPreview(`${newUrl}?t=${Date.now()}`);
-      toast.success("Banner updated");
-    } catch (err) {
+      const url = `${res.data.banner_url}?t=${Date.now()}`;
+      setPreview(url);
+      onBannerChange?.(res.data.banner_url);
+      toast.success("Club logo updated");
+    } catch {
       toast.error("Upload failed");
+      setPreview(bannerUrl || null);
     }
 
     setLoading(false);
   };
 
   const onFileChange = (e) => {
-    const file = e.target.files[0];
+    const file = e.target.files?.[0];
     if (!file) return;
-
-    // Show local preview immediately so user sees something right away
-    const localUrl = URL.createObjectURL(file);
-    setPreview(localUrl);
+    setPreview(URL.createObjectURL(file));
     setImgError(false);
-
     handleUpload(file);
+    e.target.value = "";
   };
 
-  const [removing, setRemoving] = useState(false);
-
-  const handleRemove = async (e) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const confirmRemove = async () => {
     setRemoving(true);
     try {
       await api.delete(`/org/${orgId}/banner`);
       setPreview(null);
       setImgError(false);
-      toast.success("Profile photo removed");
+      onBannerChange?.("");
+      toast.success("Club logo removed");
+      setConfirmOpen(false);
     } catch (err) {
-      toast.error("Failed to remove photo");
+      toast.error(err?.response?.data?.detail || "Failed to remove logo");
     }
     setRemoving(false);
   };
 
-  // Show image only if preview exists and no load error
-  const showImage = preview && !imgError;
-
-  // Fallback: initials avatar if no image
-  const initials = orgName ? orgName.charAt(0).toUpperCase() : "?";
+  const showImage = Boolean(preview) && !imgError;
+  const busy = loading || removing;
 
   return (
-    <div style={{ textAlign: "center", position: "relative", display: "inline-block" }}>
-      <label style={{ cursor: "pointer", position: "relative", display: "inline-block" }}>
-        <div
-          style={{
-            width: "130px",
-            height: "130px",
-            borderRadius: "50%",
-            overflow: "hidden",
-            border: "3px solid var(--border-primary)",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: showImage ? "transparent" : "var(--bg-tertiary)",
-            position: "relative"
-          }}
+    <>
+      <div className="org-logo-wrap">
+        <button
+          type="button"
+          className="org-logo-btn"
+          onClick={() => !busy && inputRef.current?.click()}
+          title="Change club logo"
+          disabled={busy}
         >
-          {loading || removing ? (
-            <div
-              style={{
-                width: "30px",
-                height: "30px",
-                border: "4px solid #ccc",
-                borderTop: "4px solid #5a9fcf",
-                borderRadius: "50%",
-                animation: "spin 1s linear infinite"
-              }}
-            />
-          ) : showImage ? (
-            <img
-              src={preview}
-              alt="banner"
-              onError={() => setImgError(true)}  // fallback on broken image
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "cover"
-              }}
-            />
-          ) : (
-            <OrgLogo orgName={orgName} size={130} style={{ borderRadius: '50%' }} />
-          )}
-        </div>
+          <div className={`org-logo-frame ${showImage ? "has-image" : ""}`}>
+            {busy ? (
+              <div className="org-logo-spinner" />
+            ) : showImage ? (
+              <img
+                src={preview}
+                alt={`${orgName || "Club"} logo`}
+                onError={() => setImgError(true)}
+              />
+            ) : (
+              <OrgLogo orgName={orgName} size={88} />
+            )}
+            {!busy && (
+              <span className="org-logo-overlay">
+                <Camera size={18} strokeWidth={2} />
+                <span>{showImage ? "Change" : "Upload"}</span>
+              </span>
+            )}
+          </div>
+        </button>
+
+        {showImage && !busy && (
+          <button
+            type="button"
+            className="org-logo-remove"
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              setConfirmOpen(true);
+            }}
+            title="Remove logo"
+            aria-label="Remove club logo"
+          >
+            <Trash2 size={14} strokeWidth={2} />
+          </button>
+        )}
 
         <input
+          ref={inputRef}
           type="file"
           accept="image/png,image/jpeg,image/jpg"
-          style={{ display: "none" }}
+          className="d-none"
           onChange={onFileChange}
         />
-      </label>
+      </div>
 
-      {/* Remove button — outside the label so it doesn't trigger file picker */}
-      {showImage && !loading && !removing && (
-        <button
-          onClick={handleRemove}
-          title="Remove photo"
-          style={{
-            position: "absolute",
-            top: "0px",
-            right: "0px",
-            background: "#ef4444",
-            border: "none",
-            borderRadius: "50%",
-            width: "24px",
-            height: "24px",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            cursor: "pointer",
-            boxShadow: "0 0 4px rgba(0,0,0,0.3)",
-            zIndex: 10
-          }}
-        >
-          <FiX size={13} color="#fff" />
-        </button>
-      )}
-
-      <style>
-        {`
-        @keyframes spin {
-          0% { transform: rotate(0deg); }
-          100% { transform: rotate(360deg); }
-        }
-        `}
-      </style>
-    </div>
+      <ConfirmationModal
+        isOpen={confirmOpen}
+        onClose={() => !removing && setConfirmOpen(false)}
+        onConfirm={confirmRemove}
+        title="Remove logo?"
+        message="Remove this club logo?"
+        isLoading={removing}
+      />
+    </>
   );
 }

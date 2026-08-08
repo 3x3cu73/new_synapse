@@ -516,14 +516,14 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useParams, useSearchParams } from 'react-router-dom';
 import api from '../api/axios';
-import { Calendar, Users, BarChart3, Plus, Download, Eye, Lock, Globe, Trash2, UserPlus, X, Edit, UserCheck, Tag, Upload, Save, Check, ChevronDown, Search, Radio, Building2, Inbox, CheckCircle, XCircle, FileText, ExternalLink } from 'lucide-react';
+import { Calendar, Users, BarChart3, Plus, Download, Eye, Lock, Globe, Trash2, X, Edit, UserCheck, Tag, Upload, Save, Check, ChevronDown, Search, Radio, Building2, Inbox, CheckCircle, XCircle, FileText, ExternalLink } from 'lucide-react';
 import DynamicFormBuilder from '../components/Forms/DynamicFormBuilder';
 import DemographicsChart from '../components/Charts/DemographicsChart';
 import Loader from '../components/UI/Loader';
 import { formatDate } from '../utils/dateUtils';
 import toast from 'react-hot-toast';
 
-import { DEPARTMENTS, HOSTELS, YEARS, HEAD_ROLES, TEAM_ROLES, GENRES, LH_ROOMS, isLhVenue, detectLhInput, findLhRoom } from '../utils/constants';
+import { DEPARTMENTS, HOSTELS, YEARS, HEAD_ROLES, GENRES, LH_ROOMS, isLhVenue, detectLhInput, findLhRoom } from '../utils/constants';
 import OrgBanner from '../components/UI/OrgBanner';
 import SearchableDropdown from '../components/UI/SearchableDropdown';
 import { capitalize, orgDisplayName } from '../utils/capitalize';
@@ -836,10 +836,10 @@ const OrgDashboard = () => {
   const [formSchema, setFormSchema] = useState([]);
   const [imageFile, setImageFile] = useState(null);
   const posterInputRef = useRef(null);
-  const [newMember, setNewMember] = useState({ email:'',role:'coordinator' });
   const [confirmModal, setConfirmModal] = useState({ open: false, title: '', message: '', onConfirm: null, loading: false });
 
   const loadedTabsRef = useRef({});
+  const loadGenRef = useRef(0);
 
   const fetchDashboard = useCallback(async () => {
     const res = await api.get(`/org/${orgId}/dashboard`);
@@ -863,10 +863,24 @@ const OrgDashboard = () => {
     setRequests(res.data);
   }, [orgId]);
 
-  const fetchTabData = useCallback(async (tab) => {
-    if (loadedTabsRef.current[tab]) return;
-    const isFirstLoad = Object.keys(loadedTabsRef.current).length === 0;
-    isFirstLoad ? setLoading(true) : setTabLoading(true);
+  const markTabLoaded = useCallback((tab) => {
+    const next = { ...loadedTabsRef.current, [tab]: true };
+    if (tab === 'events' || tab === 'create') {
+      next.events = true;
+      next.create = true;
+    }
+    loadedTabsRef.current = next;
+    setLoadedTabs(next);
+  }, []);
+
+  const fetchTabData = useCallback(async (tab, { force = false, showFullLoader = false } = {}) => {
+    if (!force && loadedTabsRef.current[tab]) return;
+    const gen = loadGenRef.current;
+    if (showFullLoader || Object.keys(loadedTabsRef.current).length === 0) {
+      setLoading(true);
+    } else {
+      setTabLoading(true);
+    }
     try {
       if (tab === 'dashboard') {
         await fetchDashboard();
@@ -877,42 +891,94 @@ const OrgDashboard = () => {
       } else if (tab === 'requests') {
         await fetchRequests();
       }
-      loadedTabsRef.current = { ...loadedTabsRef.current, [tab]: true };
-      setLoadedTabs(prev => ({ ...prev, [tab]: true }));
+      if (gen !== loadGenRef.current) return;
+      markTabLoaded(tab);
     } catch (err) {
-      toast.error("Failed to load data");
+      if (gen === loadGenRef.current) toast.error("Failed to load data");
     } finally {
-      setLoading(false);
-      setTabLoading(false);
+      if (gen === loadGenRef.current) {
+        setLoading(false);
+        setTabLoading(false);
+      }
     }
-  }, [fetchDashboard, fetchEvents, fetchTeam, fetchRequests]);
+  }, [fetchDashboard, fetchEvents, fetchTeam, fetchRequests, markTabLoaded]);
 
-  useEffect(() => { fetchTabData(activeTab); }, [activeTab, fetchTabData]);
-
-  // Reset and re-fetch when org changes
+  // Tab switches within the same org
   useEffect(() => {
+    fetchTabData(activeTab);
+  }, [activeTab, fetchTabData]);
+
+  // Club switch: always refresh header identity (name / role / logo), then current tab
+  useEffect(() => {
+    loadGenRef.current += 1;
+    const gen = loadGenRef.current;
     loadedTabsRef.current = {};
     setLoadedTabs({});
     setStats(null);
     setEvents([]);
     setTeam([]);
     setRequests([]);
-    fetchTabData(activeTab);
+    setEditingEventId(null);
+    setOrgGenres([]);
+
+    (async () => {
+      setLoading(true);
+      try {
+        // Header always depends on dashboard payload
+        const dashRes = await api.get(`/org/${orgId}/dashboard`);
+        if (gen !== loadGenRef.current) return;
+        setStats(dashRes.data);
+        const g = dashRes.data.org_genres;
+        setOrgGenres(g ? g.split(',').map(s => s.trim()).filter(Boolean) : []);
+        markTabLoaded('dashboard');
+
+        if (activeTab !== 'dashboard') {
+          if (activeTab === 'events' || activeTab === 'create') {
+            const res = await api.get(`/org/${orgId}/events`);
+            if (gen !== loadGenRef.current) return;
+            setEvents(res.data);
+            markTabLoaded(activeTab);
+          } else if (activeTab === 'team') {
+            const res = await api.get(`/org/${orgId}/team`);
+            if (gen !== loadGenRef.current) return;
+            setTeam(res.data);
+            markTabLoaded('team');
+          } else if (activeTab === 'requests') {
+            const res = await api.get(`/org/${orgId}/requests`);
+            if (gen !== loadGenRef.current) return;
+            setRequests(res.data);
+            markTabLoaded('requests');
+          }
+        }
+      } catch {
+        if (gen === loadGenRef.current) toast.error("Failed to load organisation");
+      } finally {
+        if (gen === loadGenRef.current) {
+          setLoading(false);
+          setTabLoading(false);
+        }
+      }
+    })();
   }, [orgId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Full refresh (after create/edit/delete)
   const fetchData = useCallback(async () => {
+    loadGenRef.current += 1;
+    const gen = loadGenRef.current;
     loadedTabsRef.current = {};
     setLoadedTabs({});
     setLoading(true);
     try {
       await Promise.all([fetchDashboard(), fetchEvents(), fetchTeam(), fetchRequests()]);
+      if (gen !== loadGenRef.current) return;
       const allLoaded = { dashboard: true, events: true, create: true, team: true, requests: true };
       loadedTabsRef.current = allLoaded;
       setLoadedTabs(allLoaded);
     } catch (err) {
-      toast.error("Failed to load dashboard data");
-    } finally { setLoading(false); }
+      if (gen === loadGenRef.current) toast.error("Failed to load dashboard data");
+    } finally {
+      if (gen === loadGenRef.current) setLoading(false);
+    }
   }, [fetchDashboard, fetchEvents, fetchTeam, fetchRequests]);
 
   useEffect(() => {
@@ -971,36 +1037,6 @@ const OrgDashboard = () => {
     } catch (err) {
       toast.error(err?.response?.data?.detail || err?.response?.data?.message || "Failed to save event");
     }
-  };
-
-  const handleAddMember = async (e) => {
-    e.preventDefault();
-    try {
-      await api.post(`/org/${orgId}/team`, newMember);
-      toast.success(`${newMember.role} added successfully`);
-      setNewMember({ email:'',role:'coordinator' });
-      fetchData();
-    } catch (err) {
-      toast.error(err.response?.data?.detail || "Failed to add member");
-    }
-  };
-
-  const handleRemoveMember = (userId) => {
-    setConfirmModal({
-      open: true,
-      title: 'Remove Member',
-      message: 'Are you sure you want to remove this member? This action cannot be undone.',
-      loading: false,
-      onConfirm: async () => {
-        setConfirmModal(prev => ({ ...prev, loading: true }));
-        try {
-          await api.delete(`/org/${orgId}/team/${userId}`);
-          toast.success('Member removed');
-          fetchData();
-        } catch (err) { toast.error('Failed to remove member'); }
-        setConfirmModal({ open: false, title: '', message: '', onConfirm: null, loading: false });
-      },
-    });
   };
 
   const handleEditEvent = (ev) => {
@@ -1074,22 +1110,34 @@ const OrgDashboard = () => {
       />
 
       <div className="org-header">
-        <div className="org-header-top">
-          <div>
-            <OrgBanner orgId={orgId} orgName={orgDisplayName(stats?.org_name)} bannerUrl={stats?.org_banner} />
-            <h2 className="fw-bold mt-2" style={{ color:'var(--text-primary)' }}>{orgDisplayName(stats?.org_name)} Dashboard</h2>
-            <p style={{ color:'var(--text-secondary)' }}>Role: <span className="badge bg-purple">{stats?.your_role}</span></p>
+        <div className="org-hero">
+          <div className="org-hero-identity">
+            <OrgBanner
+              key={`org-banner-${orgId}`}
+              orgId={orgId}
+              orgName={stats?.org_name || orgDisplayName(stats?.org_name)}
+              bannerUrl={stats?.org_banner}
+              onBannerChange={(url) => {
+                setStats((prev) => (prev ? { ...prev, org_banner: url || null } : prev));
+              }}
+            />
+            <div className="org-hero-text">
+              <p className="org-hero-eyebrow">Organisation</p>
+              <h2 className="org-hero-title">{stats?.org_name || orgDisplayName(stats?.org_name)}</h2>
+              <div className="org-hero-meta">
+                <span className="org-role-pill">{stats?.your_role || 'member'}</span>
+                {stats?.org_type && <span className="org-type-pill">{stats.org_type}</span>}
+              </div>
+            </div>
           </div>
-          <div className="pill-tab-nav">
+          <div className="pill-tab-nav org-hero-tabs">
             <button className={`pill-tab ${activeTab==='dashboard'?'active':''}`} onClick={() => setActiveTab('dashboard')}><BarChart3 size={15} /> Overview</button>
             <button className={`pill-tab ${activeTab==='events'?'active':''}`} onClick={() => setActiveTab('events')}><Eye size={15} /> Events</button>
             <button className={`pill-tab ${activeTab==='team'?'active':''}`} onClick={() => setActiveTab('team')}><Users size={15} /> Team</button>
             <button className={`pill-tab ${activeTab==='requests'?'active':''}`} onClick={() => setActiveTab('requests')}>
               <Inbox size={15} /> Requests
               {requests.length > 0 && (
-                <span className="badge bg-danger ms-1" style={{ fontSize: '0.65rem', padding: '2px 6px' }}>
-                  {requests.length}
-                </span>
+                <span className="org-tab-count">{requests.length}</span>
               )}
             </button>
             <button className={`pill-tab ${activeTab==='create'?'active':''}`} onClick={() => { setEditingEventId(null); setActiveTab('create'); }}><Plus size={15} /> Create</button>
@@ -1229,81 +1277,45 @@ const OrgDashboard = () => {
       {/* ── TEAM ── */}
       {activeTab === 'team' && (
         tabLoading ? <div className="d-flex justify-content-center py-5"><Loader /></div> :
-        <div className="row g-4">
-          {isHead && (
-            <div className="col-12 col-md-4">
-              <div className="glass-card p-4">
-                <h5 className="fw-bold mb-3 d-flex align-items-center gap-2" style={{ color:'var(--text-primary)' }}>
-                  <UserPlus size={18} className="text-purple" /> Add Member
-                </h5>
-                <form onSubmit={handleAddMember}>
-                  <div className="mb-3">
-                    <label className="form-label-modern">IITD Email</label>
-                    <input type="email" className="form-control modern-input" placeholder="e.g. cs1230001@iitd.ac.in"
-                      value={newMember.email} onChange={e => setNewMember({...newMember,email:e.target.value})} required />
-                  </div>
-                  <div className="mb-3">
-                    <label className="form-label-modern">Role</label>
-                    <SearchableDropdown
-                      options={TEAM_ROLES.map(role => ({ label: role.charAt(0).toUpperCase()+role.slice(1), value: role }))}
-                      value={newMember.role}
-                      onChange={val => setNewMember({...newMember, role: val})}
-                      placeholder="Select role..."
-                      searchable={false}
-                    />
-                  </div>
-                  <button type="submit" className="btn btn-purple w-100">Add to Team</button>
-                </form>
-              </div>
-            </div>
-          )}
-          <div className={isHead ? "col-12 col-md-8" : "col-12"}>
-            <div className="glass-card p-4">
-              <h5 className="fw-bold mb-4" style={{ color:'var(--text-primary)' }}>Team Members</h5>
-              <div className="modern-table-wrapper">
-                <table className="modern-table">
-                  <thead>
-                    <tr>
-                      <th>Name</th>
-                      <th className="d-none d-md-table-cell">Email</th>
-                      <th>Role</th>
-                      {isHead && <th>Action</th>}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {team.map(member => (
-                      <tr key={member.user_id}>
-                        <td>
-                          <div className="d-flex align-items-center gap-2">
-                            <UserAvatar name={member.name} photoUrl={member.photo_url} size={36} />
-                            <div>
-                              <div className="fw-semibold" style={{ fontSize:'0.88rem' }}>{member.name}</div>
-                              {/* Email under name on mobile */}
-                              <div className="d-md-none small" style={{ color:'var(--text-muted)',fontSize:'0.72rem' }}>{member.email}</div>
-                            </div>
-                          </div>
-                        </td>
-                        <td className="d-none d-md-table-cell" style={{ color:'var(--text-secondary)' }}>{member.email}</td>
-                        <td>
-                          <span className={`badge ${HEAD_ROLES.includes(member.role) ? 'bg-danger' : 'bg-info text-dark'}`}>
-                            {member.role}
-                          </span>
-                        </td>
-                        {isHead && (
-                          <td>
-                            {!HEAD_ROLES.includes(member.role.toLowerCase()) && (
-                              <button className="btn-action danger" onClick={() => handleRemoveMember(member.user_id)}>
-                                <Trash2 size={14} />
-                              </button>
-                            )}
-                          </td>
-                        )}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+        <div className="glass-card p-4">
+          <h5 className="fw-bold mb-4" style={{ color:'var(--text-primary)' }}>Team Members</h5>
+          <div className="modern-table-wrapper">
+            <table className="modern-table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th className="d-none d-md-table-cell">Email</th>
+                  <th>Role</th>
+                </tr>
+              </thead>
+              <tbody>
+                {team.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="text-center py-4" style={{ color:'var(--text-muted)' }}>
+                      No members yet.
+                    </td>
+                  </tr>
+                ) : team.map(member => (
+                  <tr key={member.user_id || member.kerberos || member.email}>
+                    <td>
+                      <div className="d-flex align-items-center gap-2">
+                        <UserAvatar name={member.name} photoUrl={member.photo_url} size={36} />
+                        <div>
+                          <div className="fw-semibold" style={{ fontSize:'0.88rem' }}>{member.name}</div>
+                          <div className="d-md-none small" style={{ color:'var(--text-muted)',fontSize:'0.72rem' }}>{member.email}</div>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="d-none d-md-table-cell" style={{ color:'var(--text-secondary)' }}>{member.email}</td>
+                    <td>
+                      <span className={`badge ${HEAD_ROLES.includes((member.role || '').toLowerCase()) ? 'bg-danger' : 'bg-info text-dark'}`}>
+                        {member.role}
+                      </span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         </div>
       )}
@@ -1448,7 +1460,6 @@ const OrgDashboard = () => {
             {editingEventId ? "Edit Event" : "Create New Event"}
           </h4>
           <form onSubmit={handleCreateEvent}>
-            <p className="text-muted small">Event Form Fields loaded...</p>
             <div className="row g-3">
               <div className="col-12">
                 <label className="form-label-modern">Event Name</label>
@@ -1590,7 +1601,6 @@ const OrgDashboard = () => {
                 <X size={18} />
               </button>
             </div>
-            <p className="text-secondary small mb-3">Select genres that describe your organisation. These will be pre-selected for new events.</p>
             <MultiSelect label="" options={GENRES} selected={orgGenres} onChange={setOrgGenres} placeholder="Search & add genres..." />
             <div className="d-flex justify-content-end gap-2 mt-3">
               <button className="btn btn-outline-secondary btn-sm" onClick={() => setShowGenreModal(false)}>Cancel</button>

@@ -102,6 +102,24 @@ def logout(response: Response):
 
 
 @router.get("/me", response_model=UserOut)
-def read_users_me(current_user: User = Depends(deps.get_current_user)):
-    """Fetch the current user with roles."""
-    return current_user
+def read_users_me(
+    current_user: User = Depends(deps.get_current_user),
+    db: Session = Depends(deps.get_db),
+):
+    """Fetch the current user with roles (synced from Superdirectory when configured)."""
+    from sqlalchemy.orm import joinedload
+
+    from app.core.config import settings as app_settings
+    from app.models.role import Role
+    from app.services.superdir_sync import sync_user_from_superdir
+
+    if app_settings.REDPAGE_SYNC_ON_ME and app_settings.REDPAGE_API_BASE:
+        sync_user_from_superdir(db, current_user)
+
+    user = (
+        db.query(User)
+        .options(joinedload(User.roles).joinedload(Role.organization))
+        .filter(User.id == current_user.id)
+        .first()
+    )
+    return user

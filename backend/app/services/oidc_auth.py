@@ -114,12 +114,21 @@ def extract_email(userinfo: dict[str, Any], kerberos: str) -> str:
     return f"{kerberos}@iitd.ac.in"
 
 
-def extract_entry_number(userinfo: dict[str, Any], kerberos: str) -> str:
+def extract_full_entry_number(userinfo: dict[str, Any]) -> str | None:
+    """Optional full IITD entry (e.g. 2024MS10098) for dept/year parsing only."""
     for key in ("entry_number", "entryNumber"):
         value = userinfo.get(key)
         if isinstance(value, str) and value.strip():
             return value.strip().upper()
-    return kerberos.upper()
+    return None
+
+
+def extract_entry_number(userinfo: dict[str, Any], kerberos: str) -> str:
+    """
+    Synapse unique id = kerberos (e.g. ms1240098), matching Superdir.
+    Do not store full 2024… entry numbers as the user key.
+    """
+    return kerberos.lower().strip()
 
 
 def extract_hostel(userinfo: dict[str, Any]) -> str | None:
