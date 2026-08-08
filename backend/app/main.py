@@ -1,15 +1,16 @@
-import os
-from fastapi import FastAPI, Request
+from pathlib import Path
+
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import JSONResponse
-from pathlib import Path
 from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
+from slowapi.util import get_remote_address
 
-from app.core.config import settings
+from app.api.oidc_routes import router as oidc_router
 from app.api.v1.router import api_router
+from app.core.config import settings
+from app.services.local_uploads import ensure_upload_dir
 
 # -----------------------
 # RATE LIMITER
@@ -42,14 +43,20 @@ if settings.BACKEND_CORS_ORIGINS:
     )
 
 # -----------------------
-# STATIC FILES
+# STATIC / UPLOADS
 # -----------------------
-UPLOAD_DIR = "static/uploads"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
-
+upload_root = ensure_upload_dir().resolve()
 BASE_DIR = Path(__file__).resolve().parent.parent
 STATIC_DIR = BASE_DIR / "static"
+STATIC_DIR.mkdir(parents=True, exist_ok=True)
 
+# Local VM uploads (replaces Cloudinary)
+app.mount(
+    "/static/uploads",
+    StaticFiles(directory=str(upload_root)),
+    name="uploads",
+)
+# Other static assets (non-upload)
 app.mount(
     "/static",
     StaticFiles(directory=STATIC_DIR),
@@ -59,8 +66,16 @@ app.mount(
 # -----------------------
 # API ROUTES
 # -----------------------
+# OIDC at /api/auth/* (matches registered DevClub redirect URI)
+app.include_router(oidc_router, prefix="/api")
 app.include_router(api_router, prefix=settings.API_V1_STR)
+
 
 @app.get("/")
 def root():
     return {"message": "Welcome to Synapse API V1"}
+
+
+@app.get("/api/health")
+def health():
+    return {"status": "ok"}

@@ -1,39 +1,9 @@
-# from pydantic_settings import BaseSettings
-# from typing import List
-
-# class Settings(BaseSettings):
-#     PROJECT_NAME: str
-#     API_V1_STR: str = "/api/v1"
-#     SECRET_KEY: str
-#     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24 * 7  # 7 days
-#     UPLOAD_FOLDER: str = "static/uploads"
-
-#     # CORS
-#     BACKEND_CORS_ORIGINS = [
-#         "http://localhost:3000",
-#         "http://localhost:8000",
-#         "https://synapse-nu-peach.vercel.app"
-#     ]
-
-#     # Database
-#     DATABASE_URL: str
-
-#     # Microsoft
-#     MS_CLIENT_ID: str
-#     MS_CLIENT_SECRET: str
-#     MS_TENANT_ID: str
-#     MS_REDIRECT_URI: str
-
-#     class Config:
-#         env_file = ".env"
-
-# settings = Settings()
-
 from pydantic_settings import BaseSettings
 from typing import List
 
+
 class Settings(BaseSettings):
-    PROJECT_NAME: str
+    PROJECT_NAME: str = "Synapse"
     API_V1_STR: str = "/api/v1"
     SECRET_KEY: str
 
@@ -41,25 +11,30 @@ class Settings(BaseSettings):
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30  # 30 days
     UPLOAD_FOLDER: str = "static/uploads"
 
-    # ✅ FIXED: Typed for Pydantic v2
     BACKEND_CORS_ORIGINS: List[str] = [
         "http://localhost:3000",
         "http://localhost:8000",
-        "https://synapse-nu-peach.vercel.app"
+        "https://synapse.devclub.in",
     ]
 
-    # Database
     DATABASE_URL: str
 
-    CLOUDINARY_CLOUD_NAME:str
-    CLOUDINARY_API_KEY:str
-    CLOUDINARY_API_SECRET:str
+    # Public site URL (used for redirects and absolute upload URLs)
+    FRONTEND_URL: str = "http://localhost:3000"
+    PUBLIC_BASE_URL: str = ""  # defaults to FRONTEND_URL when empty
 
-    # Microsoft OAuth
-    MS_CLIENT_ID: str
-    MS_CLIENT_SECRET: str
-    MS_TENANT_ID: str
-    MS_REDIRECT_URI: str
+    # Local uploads on the VM
+    UPLOAD_DIR: str = "static/uploads"
+
+    # DevClub / IIT Delhi OIDC
+    OIDC_CLIENT_ID: str = ""
+    OIDC_CLIENT_SECRET: str = ""
+    OIDC_REDIRECT_URI: str = "http://localhost:8000/api/auth/callback"
+    OIDC_SCOPE: str = "openid profile email kerberos entry_number hostel iitd"
+    OIDC_DISCOVERY_URL: str = (
+        "https://auth.devclub.in/api/oauth/.well-known/openid-configuration"
+    )
+    OIDC_APP_NAME: str = "Synapse"
 
     # AWS (used by SQS service)
     AWS_ACCESS_KEY_ID: str = ""
@@ -72,5 +47,10 @@ class Settings(BaseSettings):
 
     class Config:
         env_file = ".env"
+
+    @property
+    def public_base_url(self) -> str:
+        return (self.PUBLIC_BASE_URL or self.FRONTEND_URL).rstrip("/")
+
 
 settings = Settings()

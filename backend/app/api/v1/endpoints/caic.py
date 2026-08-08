@@ -90,15 +90,11 @@ def create_caic_event(
     # 2. Handle file upload
     image_url = org.banner_url if org else None
     if photo:
-        import cloudinary.uploader
-        from app.services.cloudinary import cloudinary as _cloudinary
         import uuid
+        from app.services.local_uploads import save_upload_file
 
-        result = cloudinary.uploader.upload(
-            photo.file,
-            folder="events",
-            public_id=str(uuid.uuid4()),
-            resource_type="image",
+        result = save_upload_file(
+            photo, folder="events", public_id=str(uuid.uuid4())
         )
         image_url = result["secure_url"]
 

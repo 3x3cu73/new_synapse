@@ -7,7 +7,7 @@ from app.schemas.event import EventOut
 import uuid
 from fastapi import Form, File, UploadFile
 import json
-from app.services.cloudinary import cloudinary
+from app.services.local_uploads import save_upload_file
 from app.models.enums import HostelName
 
 from app.models.registration import Registration
@@ -31,11 +31,10 @@ def update_profile(
 
     # 🟢 UPLOAD NEW PHOTO
     elif photo:
-        result = cloudinary.uploader.upload(
-            photo.file,
+        result = save_upload_file(
+            photo,
             folder="profiles",
             public_id=str(uuid.uuid4()),
-            resource_type="image"
         )
         current_user.photo_url = result["secure_url"]
 

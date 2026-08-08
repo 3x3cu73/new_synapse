@@ -17,8 +17,7 @@ from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-import cloudinary
-import cloudinary.uploader
+from app.services.local_uploads import save_image_bytes
 
 from app.api import deps
 from app.models.event import Event
@@ -284,11 +283,12 @@ def upload_event_poster(
     if not sig_ok:
         raise HTTPException(status_code=400, detail="File content does not match an allowed image format.")
 
-    file.file.seek(0)
-
-    result = cloudinary.uploader.upload(
-        file.file, folder="events",
-        public_id=str(uuid.uuid4()), resource_type="image"
+    result = save_image_bytes(
+        contents,
+        folder="events",
+        content_type=file.content_type or "image/jpeg",
+        filename=file.filename,
+        public_id=str(uuid.uuid4()),
     )
     event.image_url = result["secure_url"]
     db.commit()

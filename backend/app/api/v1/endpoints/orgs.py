@@ -19,8 +19,7 @@ import secrets
 import hashlib
 from datetime import datetime, timedelta, timezone
 from app.core.timezone import now_utc
-from app.services.cloudinary import cloudinary
-import cloudinary.uploader
+from app.services.local_uploads import save_upload_file
 import uuid
 from app.services.sqs import send_event, SQSEvent, EventType
 from app.models.notification import Notification
@@ -166,9 +165,8 @@ def create_org_event(
     # Handle File Upload
     image_url = org.banner_url
     if photo:
-        result = cloudinary.uploader.upload(
-            photo.file, folder="events",
-            public_id=str(uuid.uuid4()), resource_type="image"
+        result = save_upload_file(
+            photo, folder="events", public_id=str(uuid.uuid4())
         )
         image_url = result["secure_url"]
 
@@ -275,9 +273,8 @@ def update_event(
         raise HTTPException(status_code=404, detail="Event not found")
 
     if photo and photo.filename:
-        result = cloudinary.uploader.upload(
-            photo.file, folder="events",
-            public_id=str(uuid.uuid4()), resource_type="image"
+        result = save_upload_file(
+            photo, folder="events", public_id=str(uuid.uuid4())
         )
         event.image_url = result["secure_url"]
 
@@ -634,9 +631,8 @@ def upload_org_banner(
 
     org_file_name = org.name.lower().replace(" ", "_")
 
-    result = cloudinary.uploader.upload(
-        banner.file, folder="org_banners",
-        public_id=org_file_name, format="jpg", resource_type="image"
+    result = save_upload_file(
+        banner, folder="org_banners", public_id=org_file_name
     )
 
     org.banner_url = result["secure_url"]
